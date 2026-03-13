@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <defs>
+    <radialGradient id="ledGlow" cx="50%" cy="40%" r="50%">
+      <stop offset="0%" stop-color="#b6ffb6"/>
+      <stop offset="45%" stop-color="#39e75f"/>
+      <stop offset="100%" stop-color="#0b5d1e"/>
+    </radialGradient>
+    <filter id="softGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- glow -->
+  <circle cx="64" cy="50" r="34" fill="#39e75f" opacity="0.22" filter="url(#softGlow)"/>
+
+  <!-- LED dome -->
+  <circle cx="64" cy="50" r="26" fill="url(#ledGlow)" stroke="#0a3d16" stroke-width="2"/>
+
+  <!-- highlight -->
+  <ellipse cx="56" cy="40" rx="10" ry="6" fill="#ffffff" opacity="0.35"/>
+
+  <!-- legs -->
+  <line x1="56" y1="78" x2="56" y2="118" stroke="#aab3b8" stroke-width="4" stroke-linecap="round"/>
+  <line x1="72" y1="78" x2="72" y2="112" stroke="#8f989d" stroke-width="4" stroke-linecap="round"/>
+
+  <!-- base -->
+  <rect x="48" y="72" width="32" height="10" rx="4" fill="#1f8f3a" stroke="#0a3d16" stroke-width="1.5"/>
+</svg>
