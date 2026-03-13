@@ -61,7 +61,15 @@ def prepare() -> bool:
 def start():
     """This function is called immediately when a run is started.
     This function should complete extremely quickly."""
-    assert STATE.settings is not None
+    # Don't do anything here, let run() do the work, we have plenty of time there
+    pass
+
+
+def run():
+    """This function is called once the experiment run has started."""
+    if STATE.settings is None:
+        syl.println("Settings not set, aborting run()")
+        return
 
     is_output = True
     ctl.firmata_register_digital_pin(STATE.settings.pin_start, "START_PULSE_PIN", is_output)
@@ -69,11 +77,6 @@ def start():
 
     # Ensure in the beggining the LEDs are not blinking
     ctl.firmata_submit_digital_pulse("STOP_PULSE_PIN", STATE.settings.pulse_duration_msec)
-
-
-def run():
-    """This function is called once the experiment run has started."""
-    assert STATE.settings is not None
 
     t0 = time.time()
     started = False
@@ -88,7 +91,10 @@ def run():
 
 def stop():
     """This function is called once a run is stopped."""
-    assert STATE.settings is not None
+    if STATE.settings is None:
+        syl.println("Settings not set, aborting stop()")
+        return
+
     ctl.firmata_submit_digital_pulse("STOP_PULSE_PIN", STATE.settings.pulse_duration_msec)
 
 
