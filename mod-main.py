@@ -79,7 +79,7 @@ def run():
     started = False
     # wait for new data to arrive and communicate with Syntalos
     while syl.is_running():
-        syl.wait(20)  # ms
+        syl.wait(1)  # ms
 
         if not started and (time.time() - t0 > STATE.settings.start_delay_sec):
             ctl.firmata_submit_digital_pulse("START_PULSE_PIN", STATE.settings.pulse_duration_msec)
