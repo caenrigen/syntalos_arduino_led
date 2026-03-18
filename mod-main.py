@@ -2,6 +2,9 @@ import time
 import json
 from dataclasses import dataclass, asdict
 
+from PyQt6 import uic
+from PyQt6.QtWidgets import QDialog, QLayout
+
 import syntalos_mlink as syl
 
 ctl = syl.get_output_port("firmatactl")
@@ -28,6 +31,8 @@ class Settings:
 @dataclass
 class State:
     settings: Settings | None = None
+    running: bool = False
+    settings_dialog: QDialog | None = None
 
 
 STATE = State()
@@ -39,6 +44,24 @@ def serialise_settings(settings: Settings) -> bytes:
 
 def deserialise_settings(settings: bytes) -> Settings:
     return Settings(**json.loads(settings.decode()))
+
+
+def save_current_settings() -> None:
+    assert STATE.settings is not None
+    syl.save_settings(serialise_settings(STATE.settings))
+
+
+def close_settings_dialog() -> None:
+    dialog = STATE.settings_dialog
+    if dialog is not None:
+        dialog.close()
+
+
+def fit_dialog_to_contents(dialog: QDialog) -> None:
+    layout = dialog.layout()
+    if layout is not None:
+        layout.setSizeConstraint(QLayout.SizeConstraint.SetFixedSize)
+    dialog.adjustSize()
 
 
 def submit_info_pulse(value: int, ts_us: int):
@@ -56,6 +79,7 @@ def submit_info_pulse(value: int, ts_us: int):
 def prepare() -> bool:
     """This function is called before a run is started.
     You can use it for (slow) initializations."""
+    close_settings_dialog()
     if STATE.settings is None:
         syl.println("Settings not set, aborting prepare()")
         return False
@@ -78,33 +102,41 @@ def run():
         syl.println("Settings not set, aborting run()")
         return
 
-    is_output = True
-    ctl.firmata_register_digital_pin(STATE.settings.pin_start, "START_PULSE_PIN", is_output)
-    ctl.firmata_register_digital_pin(STATE.settings.pin_stop, "STOP_PULSE_PIN", is_output)
+    STATE.running = True
+    try:
+        is_output = True
+        ctl.firmata_register_digital_pin(STATE.settings.pin_start, "START_PULSE_PIN", is_output)
+        ctl.firmata_register_digital_pin(STATE.settings.pin_stop, "STOP_PULSE_PIN", is_output)
 
-    # Ensure in the beggining the LEDs are not blinking
-    ctl.firmata_submit_digital_pulse("STOP_PULSE_PIN", STATE.settings.pulse_duration_msec)
+        # Ensure in the beggining the LEDs are not blinking
+        ctl.firmata_submit_digital_pulse("STOP_PULSE_PIN", STATE.settings.pulse_duration_msec)
 
-    t0 = time.time()
-    started = False
+        t0 = time.time()
+        started = False
 
-    value = 0
+        value = 0
 
-    # wait for new data to arrive and communicate with Syntalos
-    while syl.is_running():
-        syl.wait(100)  # ms
+        # wait for new data to arrive and communicate with Syntalos
+        while syl.is_running():
+            syl.wait(100)  # ms
 
-        if not started and (time.time() - t0 > STATE.settings.start_delay_sec):
-            started = True
-            ts_us = syl.time_since_start_usec()
-            submit_info_pulse(value, ts_us - 1)
-            value = 1
-            submit_info_pulse(value, ts_us)
+            if not started and (time.time() - t0 > STATE.settings.start_delay_sec):
+                started = True
+                ts_us = syl.time_since_start_usec()
+                submit_info_pulse(value, ts_us - 1)
+                value = 1
+                submit_info_pulse(value, ts_us)
 
-            ctl.firmata_submit_digital_pulse("START_PULSE_PIN", STATE.settings.pulse_duration_msec)
-        else:
-            ts_us = syl.time_since_start_usec()
-            submit_info_pulse(value, ts_us)
+                ctl.firmata_submit_digital_pulse(
+                    "START_PULSE_PIN", STATE.settings.pulse_duration_msec
+                )
+            else:
+                ts_us = syl.time_since_start_usec()
+                submit_info_pulse(value, ts_us)
+    except Exception as exc:
+        msg = f"Run failed: {exc.__class__.__name__}({exc})"
+        syl.println(msg)
+    STATE.running = False
 
 
 def stop():
@@ -112,8 +144,6 @@ def stop():
     if STATE.settings is None:
         syl.println("Settings not set, aborting stop()")
         return
-
-    ctl.firmata_submit_digital_pulse("STOP_PULSE_PIN", STATE.settings.pulse_duration_msec)
 
 
 def set_settings(settings: bytes):
@@ -137,11 +167,54 @@ def set_settings(settings: bytes):
 def show_settings(settings: bytes):
     # Showing the settings UI while running prevents the run() loop from advancing.
     # Keep it simple: no settings UI while running.
-    if syl.is_running():
+    if STATE.running or syl.is_running():
         syl.println("Cannot show settings while running")
         return
 
-    STATE.settings = deserialise_settings(settings)
+    if not settings:
+        if STATE.settings is None:
+            STATE.settings = Settings()
+    else:
+        STATE.settings = deserialise_settings(settings)
+
+    dialog = STATE.settings_dialog
+    if dialog is not None:
+        dialog.show()
+        dialog.raise_()
+        dialog.activateWindow()
+        return
+
+    assert STATE.settings is not None
+
+    dialog = uic.loadUi(UI_FILE_PATH)
+    STATE.settings_dialog = dialog
+    fit_dialog_to_contents(dialog)
+
+    dialog.startPinSpinBox.setValue(STATE.settings.pin_start)
+    dialog.stopPinSpinBox.setValue(STATE.settings.pin_stop)
+    dialog.pulseDurationSpinBox.setValue(STATE.settings.pulse_duration_msec)
+    dialog.startDelaySpinBox.setValue(STATE.settings.start_delay_sec)
+
+    def persist_settings():
+        assert STATE.settings is not None
+        STATE.settings.pin_start = dialog.startPinSpinBox.value()
+        STATE.settings.pin_stop = dialog.stopPinSpinBox.value()
+        STATE.settings.pulse_duration_msec = dialog.pulseDurationSpinBox.value()
+        STATE.settings.start_delay_sec = dialog.startDelaySpinBox.value()
+        save_current_settings()
+
+    def cleanup_dialog():
+        STATE.settings_dialog = None
+
+    dialog.startPinSpinBox.valueChanged.connect(persist_settings)
+    dialog.stopPinSpinBox.valueChanged.connect(persist_settings)
+    dialog.pulseDurationSpinBox.valueChanged.connect(persist_settings)
+    dialog.startDelaySpinBox.valueChanged.connect(persist_settings)
+    dialog.finished.connect(cleanup_dialog)
+
+    dialog.show()
+    dialog.raise_()
+    dialog.activateWindow()
 
 
 # Register the settings callback
