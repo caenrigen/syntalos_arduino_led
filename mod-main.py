@@ -41,6 +41,13 @@ def deserialise_settings(settings: bytes) -> Settings:
     return Settings(**json.loads(settings.decode()))
 
 
+def submit_info_pulse(value: int, ts_us: int):
+    block = syl.IntSignalBlock()
+    block.timestamps = [ts_us]
+    block.data = [[value]]
+    out.submit(block)
+
+
 # # ####################################################################################
 # # Syntalos interface
 # # ####################################################################################
@@ -80,13 +87,24 @@ def run():
 
     t0 = time.time()
     started = False
+
+    value = 0
+
     # wait for new data to arrive and communicate with Syntalos
     while syl.is_running():
-        syl.wait(1)  # ms
+        syl.wait(100)  # ms
 
         if not started and (time.time() - t0 > STATE.settings.start_delay_sec):
-            ctl.firmata_submit_digital_pulse("START_PULSE_PIN", STATE.settings.pulse_duration_msec)
             started = True
+            ts_us = syl.time_since_start_usec()
+            submit_info_pulse(value, ts_us - 1)
+            value = 1
+            submit_info_pulse(value, ts_us)
+
+            ctl.firmata_submit_digital_pulse("START_PULSE_PIN", STATE.settings.pulse_duration_msec)
+        else:
+            ts_us = syl.time_since_start_usec()
+            submit_info_pulse(value, ts_us)
 
 
 def stop():
