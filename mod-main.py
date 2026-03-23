@@ -10,9 +10,9 @@ import syntalos_mlink as syl
 ctl = syl.get_output_port("firmatactl")
 
 out = syl.get_output_port("start_pulse")
-out.set_metadata_value("signal_names", ["START_PULSE"])
+out.set_metadata_value("signal_names", ["START_PULSE", "TIMESTAMP_PY"])
 out.set_metadata_value("time_unit", "microseconds")
-out.set_metadata_value("data_unit", ["a.u."])
+out.set_metadata_value("data_unit", ["a.u.", "microseconds"])
 
 # Path to the UI file (same directory as this script)
 UI_FILE_PATH = "settings.ui"
@@ -64,11 +64,17 @@ def fit_dialog_to_contents(dialog: QDialog) -> None:
     dialog.adjustSize()
 
 
-def submit_info_pulse(value: int, ts_us: int):
+def submit_info_pulse(value: int, ts_us_py: int, ts_us: int):
     block = syl.IntSignalBlock()
     block.timestamps = [ts_us]
-    block.data = [[value]]
+    block.data = [[value, ts_us_py]]
     out.submit(block)
+
+
+def get_timestamps(t0_us: int):
+    ts_us_py = int(time.time() * 1e6) - t0_us
+    ts_us = syl.time_since_start_usec()
+    return ts_us_py, ts_us
 
 
 # # ####################################################################################
@@ -103,6 +109,12 @@ def run():
         return
 
     STATE.running = True
+
+    t0 = time.time()
+    t0_us = int(t0 * 1e6)
+    started = False
+    value = 0
+
     try:
         is_output = True
         ctl.firmata_register_digital_pin(STATE.settings.pin_start, "START_PULSE_PIN", is_output)
@@ -111,31 +123,27 @@ def run():
         # Ensure in the beggining the LEDs are not blinking
         ctl.firmata_submit_digital_pulse("STOP_PULSE_PIN", STATE.settings.pulse_duration_msec)
 
-        t0 = time.time()
-        started = False
-
-        value = 0
-
         # wait for new data to arrive and communicate with Syntalos
         while syl.is_running():
             syl.wait(100)  # ms
 
             if not started and (time.time() - t0 > STATE.settings.start_delay_sec):
                 started = True
-                ts_us = syl.time_since_start_usec()
+
+                ts_us_py, ts_us = get_timestamps(t0_us)
                 # Submit the START pulse asap after querying the timestamp
                 ctl.firmata_submit_digital_pulse(
                     "START_PULSE_PIN", STATE.settings.pulse_duration_msec
                 )
 
                 # for an (almost) vertical line on plots
-                submit_info_pulse(value, ts_us - 1)
+                submit_info_pulse(value, ts_us_py=ts_us_py - 1, ts_us=ts_us - 1)
                 value = 1
-                submit_info_pulse(value, ts_us)
+                submit_info_pulse(value, ts_us_py=ts_us_py, ts_us=ts_us)
 
             else:
-                ts_us = syl.time_since_start_usec()
-                submit_info_pulse(value, ts_us)
+                ts_us_py, ts_us = get_timestamps(t0_us)
+                submit_info_pulse(value, ts_us_py=ts_us_py, ts_us=ts_us)
     except Exception as exc:
         msg = f"Run failed: {exc.__class__.__name__}({exc})"
         syl.println(msg)

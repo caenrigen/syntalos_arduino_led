@@ -21,7 +21,7 @@ features = ['show-settings']
 [[ports.out]]
 data_type = 'IntSignalBlock'
 id = 'start_pulse'
-signal_names = ['START_PULSE']
+signal_names = ['START_PULSE', 'TIMESTAMP_PY']
 title = 'Start pulse'
 
 [[ports.out]]
