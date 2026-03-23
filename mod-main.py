@@ -123,13 +123,16 @@ def run():
             if not started and (time.time() - t0 > STATE.settings.start_delay_sec):
                 started = True
                 ts_us = syl.time_since_start_usec()
+                # Submit the START pulse asap after querying the timestamp
+                ctl.firmata_submit_digital_pulse(
+                    "START_PULSE_PIN", STATE.settings.pulse_duration_msec
+                )
+
+                # for an (almost) vertical line on plots
                 submit_info_pulse(value, ts_us - 1)
                 value = 1
                 submit_info_pulse(value, ts_us)
 
-                ctl.firmata_submit_digital_pulse(
-                    "START_PULSE_PIN", STATE.settings.pulse_duration_msec
-                )
             else:
                 ts_us = syl.time_since_start_usec()
                 submit_info_pulse(value, ts_us)
