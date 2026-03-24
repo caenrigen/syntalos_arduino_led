@@ -71,7 +71,7 @@ def submit_info_pulse(value: int, ts_us_py: int, ts_us: int):
     out.submit(block)
 
 
-def get_timestamps(t0_us: int):
+def get_timestamps(t0_us: int) -> tuple[int, int]:
     ts_us_py = int(time.time() * 1e6) - t0_us
     ts_us = syl.time_since_start_usec()
     return ts_us_py, ts_us
