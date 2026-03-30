@@ -85,6 +85,7 @@ def get_timestamps(t0_us: int) -> tuple[int, int]:
 def prepare() -> bool:
     """This function is called before a run is started.
     You can use it for (slow) initializations."""
+    save_current_settings()
     close_settings_dialog()
     if STATE.settings is None:
         syl.println("Settings not set, aborting prepare()")
