@@ -33,6 +33,7 @@ class State:
     settings: Settings | None = None
     running: bool = False
     settings_dialog: QDialog | None = None
+    t0_ns: int | None = None
 
 
 STATE = State()
@@ -64,17 +65,17 @@ def fit_dialog_to_contents(dialog: QDialog) -> None:
     dialog.adjustSize()
 
 
-def submit_info_pulse(value: int, ts_us_py: int, ts_us: int):
+def submit_info_pulse(value: int, ts_ns_py: int, ts_us_syl: int):
     block = syl.IntSignalBlock()
-    block.timestamps = [ts_us]
-    block.data = [[value, ts_us_py]]
+    block.timestamps = [ts_us_syl]
+    block.data = [[value, ts_ns_py // 1000]]
     out.submit(block)
 
 
-def get_timestamps(t0_us: int) -> tuple[int, int]:
-    ts_us_py = int(time.time() * 1e6) - t0_us
-    ts_us = syl.time_since_start_usec()
-    return ts_us_py, ts_us
+def get_timestamps() -> tuple[int, int]:
+    ts_ns_py = time.perf_counter_ns()
+    ts_us_syl = syl.time_since_start_usec()
+    return ts_ns_py, ts_us_syl
 
 
 # # ####################################################################################
@@ -100,6 +101,7 @@ def start():
     """This function is called immediately when a run is started.
     This function should complete extremely quickly."""
     # Don't do anything here, let run() do the work, we have plenty of time there
+    STATE.t0_ns = time.perf_counter_ns()
     pass
 
 
@@ -111,40 +113,36 @@ def run():
 
     STATE.running = True
 
-    t0 = time.time()
-    t0_us = int(t0 * 1e6)
-    started = False
-    value = 0
+    assert STATE.t0_ns is not None, "t0_ns not set"
+    delay_ns = STATE.settings.start_delay_sec * 1e9
 
+    started = False
     try:
         is_output = True
         ctl.firmata_register_digital_pin(STATE.settings.pin_start, "START_PULSE_PIN", is_output)
         ctl.firmata_register_digital_pin(STATE.settings.pin_stop, "STOP_PULSE_PIN", is_output)
 
-        # Ensure in the beggining the LEDs are not blinking
+        # Ensure in the beginning the LEDs are not blinking
         ctl.firmata_submit_digital_pulse("STOP_PULSE_PIN", STATE.settings.pulse_duration_msec)
 
-        # wait for new data to arrive and communicate with Syntalos
         while syl.is_running():
-            syl.wait(100)  # ms
+            syl.wait(1)  # ms
 
-            if not started and (time.time() - t0 > STATE.settings.start_delay_sec):
+            if not started and (time.perf_counter_ns() - STATE.t0_ns > delay_ns):
                 started = True
 
-                ts_us_py, ts_us = get_timestamps(t0_us)
+                ts_ns_py, ts_us_syl = get_timestamps()
                 # Submit the START pulse asap after querying the timestamp
                 ctl.firmata_submit_digital_pulse(
                     "START_PULSE_PIN", STATE.settings.pulse_duration_msec
                 )
 
-                # for an (almost) vertical line on plots
-                submit_info_pulse(value, ts_us_py=ts_us_py - 1, ts_us=ts_us - 1)
-                value = 1
-                submit_info_pulse(value, ts_us_py=ts_us_py, ts_us=ts_us)
-
-            else:
-                ts_us_py, ts_us = get_timestamps(t0_us)
-                submit_info_pulse(value, ts_us_py=ts_us_py, ts_us=ts_us)
+                # Dummy points at +- 1 ms for easier plotting
+                submit_info_pulse(0, ts_ns_py=ts_ns_py - 1000 * 1000, ts_us_syl=ts_us_syl - 1000)
+                # ! These timestamps are not a good absolute reference. There are non-deterministic
+                # ! delays involved, specially the serial communication with the Firmata device.
+                submit_info_pulse(1, ts_ns_py=ts_ns_py, ts_us_syl=ts_us_syl)
+                submit_info_pulse(0, ts_ns_py=ts_ns_py + 1000 * 1000, ts_us_syl=ts_us_syl + 1000)
     except Exception as exc:
         msg = f"Run failed: {exc.__class__.__name__}({exc})"
         syl.println(msg)
