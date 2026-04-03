@@ -1,5 +1,6 @@
 import time
 import json
+import traceback
 from dataclasses import dataclass, asdict
 
 from PyQt6 import uic
@@ -7,15 +8,12 @@ from PyQt6.QtWidgets import QDialog, QLayout
 
 import syntalos_mlink as syl
 
-ctl = syl.get_output_port("firmatactl")
 
-out = syl.get_output_port("start_pulse")
-out.set_metadata_value("signal_names", ["START_PULSE", "TIMESTAMP_PY"])
-out.set_metadata_value("time_unit", "microseconds")
-out.set_metadata_value("data_unit", ["a.u.", "microseconds"])
-
-# Path to the UI file (same directory as this script)
-UI_FILE_PATH = "settings.ui"
+def handle_fatal_exc(exc: Exception, syntalos_raise: bool, prefix: str = ""):
+    msg = f"{prefix}{': ' if prefix else ''}{exc.__class__.__name__}({exc})"
+    syl.println(f"{msg}\n{traceback.format_exc()}")
+    if syntalos_raise:
+        syl.raise_error(msg)
 
 
 @dataclass
@@ -74,13 +72,20 @@ def submit_info_pulse(value: int, ts_ns_py: int, ts_us_syl: int):
 
 def get_timestamps() -> tuple[int, int]:
     ts_ns_py = time.perf_counter_ns()
-    ts_us_syl = syl.time_since_start_usec()
+    ts_us_syl = int(syl.time_since_start_usec())
     return ts_ns_py, ts_us_syl
 
 
 # # ####################################################################################
 # # Syntalos interface
 # # ####################################################################################
+
+ctl = syl.get_output_port("firmatactl")
+
+out = syl.get_output_port("start_pulse")
+out.set_metadata_value("signal_names", ["START_PULSE", "TIMESTAMP_PY"])
+out.set_metadata_value("time_unit", "microseconds")
+out.set_metadata_value("data_unit", ["a.u.", "microseconds"])
 
 
 def prepare() -> bool:
@@ -131,8 +136,12 @@ def run():
             if not started and (time.perf_counter_ns() - STATE.t0_ns > delay_ns):
                 started = True
 
+                # syl.time_since_start_usec() takes a bit longer to execute (on the order of ~1 ms).
+                # Subsequent calls are faster. Do one dummy call first
+                _ = get_timestamps()
                 ts_ns_py, ts_us_syl = get_timestamps()
-                # Submit the START pulse asap after querying the timestamp
+                # Submit the START pulse asap after querying the timestamp.
+                # This call takes << 1 ms.
                 ctl.firmata_submit_digital_pulse(
                     "START_PULSE_PIN", STATE.settings.pulse_duration_msec
                 )
@@ -140,8 +149,7 @@ def run():
                 # We might be able to use this as our "global reference"
                 submit_info_pulse(1, ts_ns_py=ts_ns_py, ts_us_syl=ts_us_syl)
     except Exception as exc:
-        msg = f"Run failed: {exc.__class__.__name__}({exc})"
-        syl.println(msg)
+        handle_fatal_exc(exc, True, "Run failed")
     STATE.running = False
 
 
@@ -157,9 +165,7 @@ def set_settings(settings: bytes):
         try:
             STATE.settings = deserialise_settings(settings)
         except Exception as exc:
-            msg = f"Failed to parse settings: {exc.__class__.__name__}({exc})"
-            syl.println(msg)
-            syl.raise_error(msg)
+            handle_fatal_exc(exc, False, "Failed to parse settings")
             STATE.settings = Settings()
     elif STATE.settings is None:
         STATE.settings = Settings()
@@ -168,6 +174,9 @@ def set_settings(settings: bytes):
 # # ####################################################################################
 # # Settings UI
 # # ####################################################################################
+
+# Path to the UI file (same directory as this script)
+UI_FILE_PATH = "settings.ui"
 
 
 def show_settings(settings: bytes):
