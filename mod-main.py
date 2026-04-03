@@ -137,12 +137,8 @@ def run():
                     "START_PULSE_PIN", STATE.settings.pulse_duration_msec
                 )
 
-                # Dummy points at +- 1 ms for easier plotting
-                submit_info_pulse(0, ts_ns_py=ts_ns_py - 1000 * 1000, ts_us_syl=ts_us_syl - 1000)
-                # ! These timestamps are not a good absolute reference. There are non-deterministic
-                # ! delays involved, specially the serial communication with the Firmata device.
+                # We might be able to use this as our "global reference"
                 submit_info_pulse(1, ts_ns_py=ts_ns_py, ts_us_syl=ts_us_syl)
-                submit_info_pulse(0, ts_ns_py=ts_ns_py + 1000 * 1000, ts_us_syl=ts_us_syl + 1000)
     except Exception as exc:
         msg = f"Run failed: {exc.__class__.__name__}({exc})"
         syl.println(msg)
