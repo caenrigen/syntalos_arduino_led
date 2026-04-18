@@ -35,6 +35,8 @@ class State:
 
 
 STATE = State()
+ctl: syl.OutputPort | None = None
+out: syl.OutputPort | None = None
 
 
 def serialise_settings(settings: Settings) -> bytes:
@@ -64,6 +66,7 @@ def fit_dialog_to_contents(dialog: QDialog) -> None:
 
 
 def submit_info_pulse(value: int, ts_ns_py: int, ts_us_syl: int):
+    assert out is not None
     block = syl.IntSignalBlock()
     block.timestamps = [ts_us_syl]
     block.data = [[value, ts_ns_py // 1000]]
@@ -80,22 +83,29 @@ def get_timestamps() -> tuple[int, int]:
 # # Syntalos interface
 # # ####################################################################################
 
-ctl = syl.get_output_port("firmatactl")
-
-out = syl.get_output_port("start_pulse")
-out.set_metadata_value("signal_names", ["START_PULSE", "TIMESTAMP_PY"])
-out.set_metadata_value("time_unit", "microseconds")
-out.set_metadata_value("data_unit", ["a.u.", "microseconds"])
+def register_ports() -> None:
+    syl.register_output_port("start_pulse", "Start pulse", "IntSignalBlock")
+    syl.register_output_port("firmatactl", "Firmata control", "FirmataControl")
 
 
 def prepare() -> bool:
     """This function is called before a run is started.
     You can use it for (slow) initializations."""
+    global ctl, out
+
     save_current_settings()
     close_settings_dialog()
     if STATE.settings is None:
         syl.println("Settings not set, aborting prepare()")
         return False
+
+    ctl = syl.get_output_port("firmatactl")
+    out = syl.get_output_port("start_pulse")
+    assert ctl is not None
+    assert out is not None
+    out.set_metadata_value("signal_names", ["START_PULSE", "TIMESTAMP_PY"])
+    out.set_metadata_value("time_unit", "microseconds")
+    out.set_metadata_value("data_unit", ["a.u.", "microseconds"])
 
     # NB setting up the pins of the Firmata device here does not work bc
     # the firmata module is not yet ready
@@ -112,6 +122,7 @@ def start():
 
 def run():
     """This function is called once the experiment run has started."""
+    assert ctl is not None
     if STATE.settings is None:
         syl.println("Settings not set, aborting run()")
         return
@@ -234,3 +245,6 @@ def show_settings(settings: bytes):
 
 # Register the settings callback
 syl.call_on_show_settings(show_settings)
+
+# Register ports at module level so Syntalos can restore project connections.
+register_ports()
