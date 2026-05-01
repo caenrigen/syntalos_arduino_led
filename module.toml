@@ -5,7 +5,7 @@ name = "LED Controller"
 description = "Controls a Firmata device. Makes the Firmata device send pulses on two digital output pins. These outputs should be connected to digital inputs of an Arduino capable of generating periodic LED pulses. The LED pulses are intended for launch sync or marathon experiments to quantify time drifts and delays."
 icon = "led.svg"
 
-main = "mod-main.py"
+main = "module.py"
 use_venv = false
 
 # By default development modules don't show up in Syntalos
